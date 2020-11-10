@@ -1,1 +1,1 @@
-# Parser
+Implemented a parser & lexer for a custom programming language in JavaCC.
