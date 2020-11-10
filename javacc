@@ -1,0 +1,11 @@
+#!/bin/sh
+JAR="`dirname $0`/javacc.jar"
+
+case "`uname`" in
+     CYGWIN*) JAR="`cygpath --windows -- "$JAR"`" ;;
+esac
+#run using ./javacc Assignment.jj with Javacc.jar, javacc, Assignment.jj and instructions in the same dir
+java -classpath "$JAR" javacc "$@"
+#java -classpath "$JAR" javacc -DEBUG_PARSER=true "$@"
+javac *.java
+java Assignment < instructions.txt

@@ -1,0 +1,321 @@
+PARSER_BEGIN(Assignment)
+
+import java.util.HashMap;
+import java.util.ArrayList;
+import java.math.BigInteger;
+public class Assignment {
+    @SuppressWarnings("unchecked")
+    public static void main(String[] args) throws ParseException, TokenMgrError {
+        Assignment parser = new Assignment(System.in);
+        HashMap<String,TreeNode> functions = new HashMap<String,TreeNode>();
+        try{
+            functions = parser.Parse();
+        } catch(ParseException e)
+        {
+            String err = "Error: ";
+            err += "Expected token ";
+            for (int[] i : e.expectedTokenSequences)
+            {
+                for (int j : i)
+                {
+                    err +=  e.tokenImage[j] + " or ";
+                }
+            }
+            // remove excess or
+            err = err.substring(0, err.length() - 4);
+            if (e.currentToken.image != null)
+                err += " after token : \""+e.currentToken.image+"\"";
+            ReportError(err);
+        } catch(TokenMgrError e)
+        {
+            switch(e.errorCode)
+            {
+                case(TokenMgrError.LEXICAL_ERROR):
+                    ReportError("Error : Unknown character in program.");
+                    break;
+                default:
+                    ReportError("An error has occurred.");
+            }
+        }
+        TreeNode temp = functions.get("MAIN");
+        // Clearer to separate the checking of infinite loops and the evaluator, it has a small impact on performance
+        // But makes the program much more readable
+        if (check_infinite_loops(functions, temp, new ArrayList<String>()))
+        {
+            // Uses BigInteger to be able to compute very large numbers.
+            BigInteger value = evaluate(functions, temp, new BigInteger("0"));
+            System.out.println(value);
+        } else
+            System.out.println("DIVERGENCE");
+        System.out.println("PASS");
+    }
+
+    private static boolean check_infinite_loops(HashMap<String,TreeNode> functions, TreeNode node, final ArrayList<String> _previous)
+    {
+        ArrayList<String> previous = new ArrayList<String>(_previous);
+        if (node.type == Node.FUNCTION)
+        {
+            // Check if Current function was called before, if so then there is an infinite loop
+            if (previous.contains(node.function_name))
+                return false;
+            // Check the function called is defined and go to the definition
+            TreeNode func = functions.get(node.function_name);
+            if (func == null)
+                ReportError("Error: Call to an undefined function: "+func.function_name);
+
+            // Check paramater of function and its definition for a loop
+            boolean temp = check_infinite_loops(functions, node.lchild, previous);
+            previous.add(node.function_name);
+            return temp && check_infinite_loops(functions, func.lchild, previous);
+        }
+        // Check all possible children for loop
+        if (node.lchild != null && node.rchild != null)
+            return (check_infinite_loops(functions, node.lchild, previous) && check_infinite_loops(functions, node.rchild, previous));
+        if (node.lchild != null)
+            return check_infinite_loops(functions, node.lchild, previous);
+        if (node.rchild != null)
+            return check_infinite_loops(functions, node.rchild, previous);
+        return true;
+    }
+
+    private static BigInteger evaluate(HashMap<String,TreeNode> functions, TreeNode tree, BigInteger param)
+    {
+        if (tree.type == Node.MAIN)
+            return evaluate(functions, tree.lchild, param);
+        if (tree.type == Node.FUNCTION)
+        {
+            TreeNode temp = functions.get(tree.function_name);
+            if (temp == null)
+                ReportError("Error: Call to an undefined function: "+tree.function_name);
+            // Evaluate the body of the function and the parameter (and so get the value of the parameter)
+            return evaluate(functions, temp.lchild, evaluate(functions, tree.lchild, param));
+        }
+        // return parameter value, number or the addition/multiplication of two numbers
+        switch(tree.type)
+        {
+            case PARAMETER:
+                return param;
+            case NUMBER:
+                return tree.value;
+            case OPERAND:
+                if (tree.operand == Operand.ADD)
+                    return evaluate(functions, tree.lchild, param).add(evaluate(functions, tree.rchild, param));
+                return evaluate(functions, tree.lchild, param).multiply(evaluate(functions, tree.rchild, param));
+        }
+        ReportError("Error: Unknown node type in function.");
+        return new BigInteger("0");
+    }
+
+    // reports all errors and stops execution of the program
+    private static void ReportError(String err)
+    {
+        System.err.println(err);
+        System.out.println("FAIL");
+        System.exit(-1);
+    }
+}
+
+// have the first child of root be the main call, have the rest be function definitions
+
+enum Node
+{
+    MAIN, FUNCTION, NUMBER, OPERAND, PARAMETER, SUBTREE
+}
+
+enum Operand
+{
+    ADD, MUL
+}
+
+class TreeNode
+{
+    // These will be package private by default, it isn't necessary to use setters and getters
+    Node type;
+    // Not used when node is MAIN
+    String function_name;
+    // Acts like a binary tree, if there is a single link from one node then lchild is used always
+    TreeNode rchild;
+    TreeNode lchild;
+    // Only used when node is of type number
+    BigInteger value;
+    // Only used when node is of type operand
+    Operand operand;
+
+    // Constructor used when creating a param node
+    public TreeNode(Node type)
+    {
+        this.type = type;
+    }
+
+    // Constructor used when creating a MAIN node
+    public TreeNode(Node type, TreeNode lchild)
+    {
+        this.type = type;
+        this.lchild = lchild;
+    }
+
+    // Constructor used when node created is a function
+    public TreeNode(Node type, String function_name, TreeNode lchild)
+    {
+        this.type = type;
+        this.function_name = function_name;
+        this.lchild = lchild;
+    }
+
+    // Constructor used when node created is a number
+    public TreeNode(BigInteger value, Node type)
+    {
+        this.type = type;
+        this.value = value;
+    }
+
+    // Constructor used when node created is an operand
+    public TreeNode(Node type, Operand operand, TreeNode lchild, TreeNode rchild)
+    {
+        this.type = type;
+        this.operand = operand;
+        this.lchild = lchild;
+        this.rchild = rchild;
+    }
+}
+
+PARSER_END(Assignment)
+
+SKIP:  { "\t" | "\r"}
+TOKEN: {
+<RP: ")">
+| <LP: "(">
+| <ADD: "+">
+| <MUL: "*">
+| <LB: "{">
+| <RB: "}">
+| <SC: ";">
+| <SPACE: " ">
+| <DEF: "DEF">
+| <MAIN: "MAIN">
+| <FUNC: (["A"-"Z"])+>
+| <PARAM: (["a"-"z"])+>
+| <NUM: (["0"-"9"])+>
+| <EOL: "\n" | "\r" | "\r\n">}
+
+HashMap Parse() :
+{
+    Boolean HasMain = false;
+    HashMap<String,TreeNode> functions = new HashMap<String,TreeNode>();
+    TreeNode function;
+}
+{
+    (// Use lookahead as it makes for an easy switch of definition of functions
+        LOOKAHEAD(<DEF><SPACE><MAIN>)
+        (function = Main())
+        {
+            // Check if MAIN function is defined more than once
+            if (HasMain)
+                ReportError("Error: Main function defined multiple times");
+            functions.put("MAIN", function);
+            HasMain = true;
+        }
+        | (function = Function())
+        {
+            // Check for functions defined twice
+            if (functions.get(function.function_name) != null)
+                ReportError("Error: Function " + function.function_name + " defined multiple times");
+            functions.put(function.function_name, function);
+        }
+    )+
+    <EOF>
+    {
+        // Check if MAIN functions is defined or not
+        if (!HasMain)
+            ReportError("Error: No Main function found");
+        return functions;
+    }
+}
+
+TreeNode Main():
+{
+    TreeNode function;
+}
+{
+    <DEF><SPACE><MAIN><SPACE><LB><SPACE>
+    (function = FunctionBody(""))
+    <SPACE><RB><SPACE><SC><EOL>
+    {
+        return new TreeNode(Node.MAIN, function);
+    }
+}
+
+TreeNode Function():
+{
+    Token param;
+    Token function;
+    TreeNode subtree;
+}
+{
+    <DEF><SPACE>
+    (function = <FUNC>)
+    <SPACE>
+    (param = <PARAM>)
+    <SPACE><LB><SPACE>
+    (subtree = FunctionBody(param.image))
+    <SPACE><RB><SPACE><SC><EOL>
+    { return new TreeNode(Node.FUNCTION, function.image, subtree); }
+}
+
+TreeNode FunctionBody(String param):
+{
+    TreeNode E;
+    TreeNode F;
+}
+{
+    E = E(param)
+    (
+        <ADD>
+        F = E(param)
+        {
+            E = new TreeNode(Node.OPERAND, Operand.ADD, E, F);
+        }
+    )*
+    { return E; }
+}
+
+TreeNode E(String param):
+{
+    TreeNode E;
+    TreeNode F;
+}
+{
+    E = F(param)
+    (
+        <MUL>
+        F = F(param)
+        {
+            E = new TreeNode(Node.OPERAND, Operand.MUL, E, F);
+        }
+    )*
+    { return E; }
+}
+
+TreeNode F(String param):
+{
+    Token p;
+    Token num;
+    TreeNode function;
+}
+{
+    num = <NUM> { return new TreeNode(new BigInteger(num.image), Node.NUMBER); }
+    | p = <FUNC>
+      <LP>
+      function = FunctionBody(param)
+      <RP>
+      { return new TreeNode(Node.FUNCTION, p.image, function); }
+    | p = <PARAM>
+    {
+        // Check parameters are consistent with the function definition
+        if (param.equals(""))
+            param = "none";
+        if (!param.equals(p.image))
+            ReportError("Error: Unknown parameter \""+p.image+"\" in function where parameter should be \""+param+"\"");
+        return new TreeNode(Node.PARAMETER);
+    }
+}
